@@ -1,8 +1,5 @@
 # Akita eMail for Meshtastic
 
-![image](https://github.com/user-attachments/assets/29dced84-aded-470b-8a74-7c46975b2d1b)
-
-
 Akita eMail for Meshtastic is an off-grid email system designed to operate over Meshtastic networks. It enables users to send and receive text-based emails without relying on traditional internet or cellular infrastructure. This system is particularly useful in remote areas, during emergencies, or in situations where connectivity is limited.
 
 ## Features
