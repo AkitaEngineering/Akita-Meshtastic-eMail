@@ -1,0 +1,7 @@
+# Required Python libraries for Akita eMail
+
+meshtastic>=2.2.21 # Use a recent version for latest features/fixes
+pyserial>=3.5
+
+# Optional, but recommended for development/debugging:
+# (No specific ones needed by the core code currently)
