@@ -34,7 +34,7 @@ Akita eMail is an experimental, off-grid, store-and-forward email-like system de
 
 1.  **Clone the Repository:**
     ```bash
-    git clone [https://github.com/your-username/akita_email.git](https://github.com/your-username/akita_email.git) # Replace with your repo URL
+    git clone [https://github.com/akitaengineering/akita_email.git](https://github.com/akitaengineering/akita_email.git) 
     cd akita_email
     ```
 
