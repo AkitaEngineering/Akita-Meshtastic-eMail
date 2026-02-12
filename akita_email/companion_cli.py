@@ -5,7 +5,10 @@ import time
 import threading
 import logging
 import sys
-import readline # Enables history and editing in input()
+try:
+    import readline # Enables history and editing in input()
+except ImportError:
+    readline = None # Not available on Windows
 from typing import Optional, Dict, Any, List
 
 # Assumes running from repository root or package installed
@@ -156,8 +159,11 @@ def display_plugin_response(resp_type: str, data: Dict[str, Any]):
     to the console in a user-friendly way.
     """
     # Use readline's tools to preserve current input line
-    current_input = readline.get_line_buffer()
-    sys.stdout.write('\r' + ' ' * len(current_input) + '\r') # Clear current line
+    if readline:
+        current_input = readline.get_line_buffer()
+        sys.stdout.write('\r' + ' ' * len(current_input) + '\r') # Clear current line
+    else:
+        current_input = ""
 
     # Print the formatted response
     print("--- Plugin Response ---")
@@ -226,8 +232,9 @@ def display_plugin_response(resp_type: str, data: Dict[str, Any]):
     print("-----------------------")
 
     # Restore the user's input line and cursor position
-    sys.stdout.write(current_input)
-    sys.stdout.flush()
+    if readline:
+        sys.stdout.write(current_input)
+        sys.stdout.flush()
 
 
 def print_help():

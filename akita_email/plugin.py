@@ -3,6 +3,7 @@ import meshtastic
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
+import meshtastic.mesh_interface
 import serial
 import threading
 import time
@@ -23,7 +24,7 @@ class AkitaEmailPlugin:
     manages the database, processes messages, and communicates with the companion CLI.
     """
 
-    def __init__(self, mesh_interface: meshtastic.MeshInterface):
+    def __init__(self, mesh_interface: meshtastic.mesh_interface.MeshInterface):
         """
         Initializes the Akita eMail Plugin.
 
@@ -219,7 +220,7 @@ class AkitaEmailPlugin:
 
     # --- Meshtastic Packet Handling ---
 
-    def _meshtastic_receive_handler(self, packet: Dict[str, Any], interface: meshtastic.MeshInterface):
+    def _meshtastic_receive_handler(self, packet: Dict[str, Any], interface: meshtastic.mesh_interface.MeshInterface):
         """
         Callback method registered with meshtastic-python to handle incoming packets.
         Decodes, validates, and processes Akita messages (Email, ACK).
@@ -388,7 +389,7 @@ class AkitaEmailPlugin:
             )
             logger.debug(f"ACK for {ack_for_id} sent successfully to mesh.")
 
-        except meshtastic.MeshInterfaceError as e:
+        except Exception as e:
              # Error during Meshtastic send operation
              logger.error(f"Meshtastic error sending ACK for {ack_for_id} to {ack_to_node_id:#0x}: {e}")
              # Cannot do much if ACK send fails. The original sender will eventually retry the email.
@@ -500,7 +501,7 @@ class AkitaEmailPlugin:
             logger.debug(f"Email {email.message_id} handed off to Meshtastic interface for sending.")
             return True # Send attempt initiated
 
-        except meshtastic.MeshInterfaceError as e:
+        except Exception as e:
             # Error during the Meshtastic send operation itself
             logger.error(f"Meshtastic error during send attempt for email {email.message_id} to {email.to_node_id:#0x}: {e}")
             # Do not mark as failed yet, allow retry mechanism to handle it

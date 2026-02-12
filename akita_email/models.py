@@ -23,11 +23,11 @@ class Email:
     Used for both incoming (Inbox) and outgoing (Outbox) messages.
     """
     # Core Email Fields (transmitted over LoRa)
-    message_id: str = field(default_factory=lambda: str(uuid.uuid4())) # Unique ID
     to_node_id: NodeId          # Destination Meshtastic Node ID
     from_node_id: NodeId        # Source Meshtastic Node ID
     subject: str                # Email subject line
     body: str                   # Email content/body
+    message_id: str = field(default_factory=lambda: str(uuid.uuid4())) # Unique ID
     timestamp: float = field(default_factory=time.time) # Original creation time (epoch float)
     hops: int = 0               # Hop count (incremented on forward)
 

@@ -108,7 +108,7 @@ def main():
         if args.port or args.device:
             device_path = args.port or args.device
             logger.info(f"Connecting to Meshtastic node via Serial: {device_path}")
-            meshtastic_interface = meshtastic.serial_interface.SerialInterface(device=device_path)
+            meshtastic_interface = meshtastic.serial_interface.SerialInterface(devPath=device_path)
         elif args.host:
             logger.info(f"Connecting to Meshtastic node via TCP: {args.host}")
             meshtastic_interface = meshtastic.tcp_interface.TCPInterface(hostname=args.host)
@@ -121,15 +121,13 @@ def main():
         logger.info("Waiting for Meshtastic connection to establish...")
         time.sleep(2) # Give it a moment
         if not meshtastic_interface or not meshtastic_interface.myInfo:
-             raise meshtastic.MeshtasticError("Failed to get node info after connection. Is device responsive?")
+             raise Exception("Failed to get node info after connection. Is device responsive?")
         logger.info("Meshtastic connection established successfully.")
 
-    except meshtastic.MeshtasticError as e:
+    except Exception as e:
         logger.critical(f"Failed to connect to Meshtastic device: {e}", exc_info=True)
         print(f"\nError: Could not connect to Meshtastic device: {e}", file=sys.stderr)
-        if isinstance(e, meshtastic.NoProtoError):
-             print("Hint: Is the Meshtastic device plugged in, powered on, and the firmware running?", file=sys.stderr)
-        elif "permission denied" in str(e).lower():
+        if "permission denied" in str(e).lower():
              print("Hint: You might need permissions for the serial port.", file=sys.stderr)
              print("      On Linux: Add user to 'dialout' group (e.g., sudo usermod -a -G dialout $USER) and log out/in.", file=sys.stderr)
         elif "could not open port" in str(e).lower():
