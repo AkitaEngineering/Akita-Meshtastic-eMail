@@ -7,13 +7,14 @@ import logging
 import argparse
 import sys
 import os
+from typing import Optional
 
 # --- Dynamic Path Setup ---
 # Add the parent directory (project root) to the Python path
 # This allows running the script from the project root (`python run_plugin.py`)
 # and ensures the 'akita_email' package can be imported.
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+project_root = script_dir
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 

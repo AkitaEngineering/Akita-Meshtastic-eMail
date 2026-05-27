@@ -1,0 +1,22 @@
+2026-05-27 13:04:49,628 - akita_email.database - ERROR - Failed to create/verify database tables: near "?": syntax error
+Traceback (most recent call last):
+  File "/run/media/shaun/DATA/code/Akita-Meshtastic-eMail/akita_email/database.py", line 68, in _create_tables
+    self.conn.execute('''
+    ~~~~~~~~~~~~~~~~~^^^^
+        CREATE TABLE IF NOT EXISTS outbox (
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<12 lines>...
+        )
+        ^
+    ''', (STATUS_PENDING,)) # Set default status using constant
+    ^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: near "?": syntax error
+2026-05-27 13:04:49,636 - akita_email.database - INFO - Database connection closed.
+2026-05-27 13:19:23,462 - akita_email.database - INFO - Database initialized successfully at :memory:
+2026-05-27 13:19:23,466 - akita_email.database - INFO - Database connection closed.
+2026-05-27 13:44:04,843 - akita_email.database - INFO - Database initialized successfully at :memory:
+2026-05-27 13:44:04,843 - akita_email.database - INFO - Queued outgoing/forwarding email expired-message to 0x2
+2026-05-27 13:44:04,843 - akita_email.database - WARNING - Email expired-message to 0x2 expired after 21600s. Marking as failed.
+2026-05-27 13:44:04,843 - akita_email.database - INFO - Database connection closed.
+2026-05-27 13:44:04,844 - akita_email.database - INFO - Database initialized successfully at :memory:
+2026-05-27 13:44:04,844 - akita_email.database - INFO - Database connection closed.

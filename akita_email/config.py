@@ -18,6 +18,17 @@ PRIMARY_CHANNEL_INDEX = 0 # Explicitly use Channel 0 (Primary Channel)
 MESSAGE_HOP_LIMIT = 7     # Max hops for a message (Meshtastic default is often 3 or 7)
 MESSAGE_RETRY_INTERVAL = 60 * 5 # Seconds between retries for un-ACKed messages (5 minutes)
 MESSAGE_EXPIRY_TIME = 3600 * 6 # Seconds before giving up on a message (6 hours)
+# Use a private Meshtastic application port instead of the human text channel.
+MESHTASTIC_APP_PORT = 256
+MESHTASTIC_ACCEPTED_PORTS = {
+    MESHTASTIC_APP_PORT,
+    'PRIVATE_APP',
+    1,
+    7,
+    'TEXT_MESSAGE_APP',
+    'TEXT_MESSAGE_COMPRESSED_APP',
+}
+MESSAGE_ID_MAX_LENGTH = 64
 
 # --- Companion Device Communication (via Serial) ---
 # These ports need to be configured correctly for your setup.

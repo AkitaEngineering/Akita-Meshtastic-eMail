@@ -9,7 +9,7 @@ try:
     import readline # Enables history and editing in input()
 except ImportError:
     readline = None # Not available on Windows
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, cast
 
 # Assumes running from repository root or package installed
 try:

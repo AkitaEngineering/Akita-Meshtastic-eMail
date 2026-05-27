@@ -2,13 +2,14 @@
 # run_companion.py
 # Script to start the Akita eMail Companion CLI.
 
+import argparse
 import sys
 import os
 
 # --- Dynamic Path Setup ---
 # Add the parent directory (project root) to the Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+project_root = script_dir
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -27,5 +28,9 @@ except Exception as e:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run the Akita eMail companion CLI."
+    )
+    parser.parse_args()
     # Execute the main function from the companion_cli module
     run_companion()

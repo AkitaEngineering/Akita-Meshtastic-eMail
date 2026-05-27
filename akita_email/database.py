@@ -74,13 +74,13 @@ class AkitaDatabase:
                         body TEXT NOT NULL,
                         timestamp REAL NOT NULL,    -- Original creation time
                         hops INTEGER DEFAULT 0,     -- Hops when *we* send/forward it
-                        status TEXT NOT NULL DEFAULT ?, -- pending, sent, acked, failed
+                        status TEXT NOT NULL DEFAULT 'pending', -- pending, sent, acked, failed
                         last_attempt_time REAL DEFAULT 0,
                         retry_count INTEGER DEFAULT 0,
                         created_time REAL DEFAULT (strftime('%s', 'now')), -- When added to our outbox
                         acked_by_node_id INTEGER -- Node ID that sent the ACK
                     )
-                ''', (STATUS_PENDING,)) # Set default status using constant
+                ''')
                 # Add indexes for performance on common lookups
                 self.conn.execute('CREATE INDEX IF NOT EXISTS idx_inbox_received_time ON inbox(received_time)')
                 self.conn.execute('CREATE INDEX IF NOT EXISTS idx_outbox_status_attempt ON outbox(status, last_attempt_time)')
@@ -174,9 +174,6 @@ class AkitaDatabase:
         expiry_cutoff = now - config.MESSAGE_EXPIRY_TIME
 
         try:
-            # Use a separate cursor for potentially updating expired messages within the loop
-            update_cursor = self.conn.cursor()
-
             with self.conn: # Transaction for reading and potentially updating expired
                 # Select messages that are pending or sent but past the retry interval
                 read_cursor = self.conn.execute(
@@ -191,8 +188,7 @@ class AkitaDatabase:
                     if row['created_time'] < expiry_cutoff:
                         if row['status'] != STATUS_FAILED: # Avoid redundant updates
                             logger.warning(f"Email {row['message_id']} to {row['to_node_id']:#0x} expired after {config.MESSAGE_EXPIRY_TIME}s. Marking as failed.")
-                            # Update status directly using the separate cursor
-                            update_cursor.execute(
+                            self.conn.execute(
                                 "UPDATE outbox SET status = ?, last_attempt_time = ? WHERE message_id = ?",
                                 (STATUS_FAILED, now, row['message_id'])
                             )

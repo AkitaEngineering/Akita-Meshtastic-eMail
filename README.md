@@ -14,9 +14,10 @@ Akita eMail is an experimental, off-grid, store-and-forward email-like system de
 * **Store-and-Forward:** Messages are stored locally (in SQLite DB) and forwarded through the mesh.
 * **Reliability (Best Effort):** Uses application-level Acknowledgements (ACKs) to confirm message delivery to the final recipient node. Messages are automatically retried if not ACKed within a configurable interval.
 * **Persistent Storage:** Uses SQLite for inbox and outbox storage on the plugin host computer.
-* **Basic Routing:** Leverages the Meshtastic node database and routing capabilities (`sendText` handles path finding).
+* **Basic Routing:** Leverages Meshtastic routing by sending compact app-data packets on the primary channel to the final recipient node.
 * **Hop Limit:** Prevents messages from looping indefinitely (configurable).
 * **Message Expiry:** Messages that cannot be delivered after a configurable duration are marked as failed.
+* **Payload Safety:** Validates each encoded message against Meshtastic's maximum payload size and rejects oversized emails instead of silently failing mid-send.
 * **Alias Management:** Set your Meshtastic node's short name via the companion CLI.
 * **Modular Design:** Codebase structured into logical Python modules and package.
 * **Companion CLI:** Provides a command-line interface (runs separately) for interacting with the system (sending/reading mail, checking status).
@@ -97,12 +98,13 @@ Type commands at the `Akita>` prompt:
 1.  **Send:** User types `send` in Companion CLI -> CLI prompts for details -> CLI sends `send_email` command (JSON) to Plugin via serial (`COMPANION_PLUGIN_PORT`).
 2.  **Queue:** Plugin receives command -> Creates `Email` object -> Stores in `outbox` DB (status: `pending`) -> Assigns unique `message_id`.
 3.  **Process:** Plugin's background queue thread fetches pending email from DB.
-4.  **Encode & Send:** Plugin encodes email to compact JSON -> Calls `meshtastic.interface.sendText()` targeting the final recipient Node ID on Channel 0 with appropriate hop limit.
+4.  **Encode & Send:** Plugin encodes email to compact JSON bytes -> Calls `meshtastic.interface.sendData()` on Meshtastic's private app port targeting the final recipient Node ID on Channel 0 with the appropriate hop limit.
 5.  **Mesh Relay:** Meshtastic nodes relay the packet over LoRa using built-in routing.
 6.  **Receive & Store:** If the recipient node runs the Akita Plugin -> Plugin receives packet -> Decodes email -> Stores in `inbox` DB (if new).
-7.  **ACK:** Recipient Plugin encodes an ACK message (JSON) containing original `message_id` -> Sends ACK back towards original sender via `sendText()`.
+7.  **ACK:** Recipient Plugin encodes an ACK message (JSON) containing original `message_id` -> Sends ACK back towards original sender via `sendData()` on the same private app port.
 8.  **Confirm:** Original sender's Plugin receives ACK -> Matches `ack_for_id` -> Updates original email status in `outbox` DB to `acked` -> Notifies its Companion CLI.
 9.  **Retry/Fail:** If sender doesn't receive ACK within `MESSAGE_RETRY_INTERVAL` -> Queue processor resends original email (up to `MESSAGE_EXPIRY_TIME`). If expiry reached -> Status marked `failed`.
+10. **Oversize Handling:** If an encoded message would exceed Meshtastic's payload limit, the plugin rejects it immediately. Multi-packet chunking is not implemented.
 
 ## License
 
@@ -122,6 +124,7 @@ Contributions, bug reports, and feature requests are welcome! Please open an iss
 * **UI:** Companion is CLI only. A simple web interface (e.g., using Flask/WebSockets) hosted by the plugin process could be an alternative to the serial CLI.
 * **Group Messages:** Not implemented. Would require protocol changes (e.g., list of recipients, different ACK logic).
 * **Attachments:** Not feasible over LoRa due to bandwidth limitations.
+* **Payload Size:** No application-level chunking or reassembly is implemented. Large subjects/bodies that exceed the Meshtastic payload limit are rejected before sending.
 * **Security:** Relies solely on Meshtastic's channel encryption. No additional end-to-end application-level encryption is implemented.
 * **Companion<->Plugin IPC:** Serial communication requires careful port setup, especially on the same host. Alternatives like local sockets (TCP or Unix domain) or ZeroMQ could be more robust for same-machine setups.
 

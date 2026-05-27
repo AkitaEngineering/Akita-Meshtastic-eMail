@@ -375,30 +375,28 @@ class AkitaEmailPlugin:
     def _send_ack(self, ack_for_id: str, ack_to_node_id: NodeId, ack_from_node_id: NodeId):
         """Encodes and sends an ACK message via Meshtastic."""
         try:
-            ack_payload_str = protocol.encode_ack_to_lora(ack_for_id, ack_to_node_id, ack_from_node_id)
+            ack_payload_bytes = protocol.encode_ack_to_lora(ack_for_id, ack_to_node_id, ack_from_node_id)
             logger.info(f"Sending ACK for email {ack_for_id} to {ack_to_node_id:#0x}")
 
             # ACKs are sent directly. We don't store ACKs in the outbox or wait for ACKs-of-ACKs.
             # Send directly to the node the ACK is intended for.
-            self.interface.sendText(
-                text=ack_payload_str,
+            self.interface.sendData(
+                data=ack_payload_bytes,
                 destinationId=ack_to_node_id,
+                portNum=config.MESHTASTIC_APP_PORT,
                 channelIndex=config.PRIMARY_CHANNEL_INDEX,
                 # Use default hop limit for ACKs, maybe lower? Default seems reasonable.
                 # hopLimit=config.MESSAGE_HOP_LIMIT
             )
             logger.debug(f"ACK for {ack_for_id} sent successfully to mesh.")
 
-        except Exception as e:
-             # Error during Meshtastic send operation
-             logger.error(f"Meshtastic error sending ACK for {ack_for_id} to {ack_to_node_id:#0x}: {e}")
-             # Cannot do much if ACK send fails. The original sender will eventually retry the email.
         except ProtocolError as e:
-             # Error during ACK encoding
-             logger.error(f"Protocol error encoding ACK for {ack_for_id}: {e}", exc_info=True)
+            # Error during ACK encoding
+            logger.error(f"Protocol error encoding ACK for {ack_for_id}: {e}", exc_info=True)
         except Exception as e:
-             # Catch any other unexpected errors during ACK sending
-             logger.error(f"Unexpected error sending ACK for {ack_for_id}: {e}", exc_info=True)
+            # Error during the Meshtastic send operation itself
+            logger.error(f"Meshtastic error sending ACK for {ack_for_id} to {ack_to_node_id:#0x}: {e}", exc_info=True)
+            # Cannot do much if ACK send fails. The original sender will eventually retry the email.
 
 
     # --- Outgoing Queue Processing ---
@@ -463,7 +461,7 @@ class AkitaEmailPlugin:
     def _attempt_send_email(self, email: models.Email) -> bool:
         """
         Encodes and attempts to send a single email via Meshtastic.
-        Determines the destination for sendText().
+        Determines the destination for sendData().
 
         Args:
             email: The Email object to send.
@@ -476,9 +474,9 @@ class AkitaEmailPlugin:
 
         try:
             # Encode the email payload for LoRa
-            email_payload_str = protocol.encode_email_to_lora(email)
+            email_payload_bytes = protocol.encode_email_to_lora(email)
 
-            # Determine the destination ID for the sendText call.
+            # Determine the destination ID for the Meshtastic app-data send.
             # We send directly to the *final* recipient's Node ID.
             # Meshtastic's underlying router is responsible for finding the path.
             destination_id = email.to_node_id
@@ -491,21 +489,17 @@ class AkitaEmailPlugin:
             # Ensure it's at least 1 if hops already match limit (should have been caught earlier)
             remaining_hops = max(1, config.MESSAGE_HOP_LIMIT - email.hops)
 
-            # Send the text message via Meshtastic
-            self.interface.sendText(
-                text=email_payload_str,
+            # Send the app payload via Meshtastic on a private application port.
+            self.interface.sendData(
+                data=email_payload_bytes,
                 destinationId=destination_id,
+                portNum=config.MESHTASTIC_APP_PORT,
                 channelIndex=config.PRIMARY_CHANNEL_INDEX,
                 hopLimit=remaining_hops # Tell Meshtastic the max hops *from this point*
             )
             logger.debug(f"Email {email.message_id} handed off to Meshtastic interface for sending.")
             return True # Send attempt initiated
 
-        except Exception as e:
-            # Error during the Meshtastic send operation itself
-            logger.error(f"Meshtastic error during send attempt for email {email.message_id} to {email.to_node_id:#0x}: {e}")
-            # Do not mark as failed yet, allow retry mechanism to handle it
-            return False # Send attempt failed
         except ProtocolError as e:
             # Error during encoding - this is fatal for this message
             logger.error(f"Protocol error encoding email {email.message_id}: {e}. Marking as failed.", exc_info=True)
@@ -513,8 +507,9 @@ class AkitaEmailPlugin:
                 self.db.mark_outbox_failed(email.message_id)
             return False # Send attempt failed (permanently)
         except Exception as e:
-            # Catch any other unexpected errors during send attempt
-            logger.error(f"Unexpected error during send attempt for email {email.message_id}: {e}", exc_info=True)
+            # Error during the Meshtastic send operation itself
+            logger.error(f"Meshtastic error during send attempt for email {email.message_id} to {email.to_node_id:#0x}: {e}", exc_info=True)
+            # Do not mark as failed yet, allow retry mechanism to handle it
             return False # Send attempt failed
 
 
@@ -594,7 +589,7 @@ class AkitaEmailPlugin:
                 body = params['body']
 
                 if not isinstance(body, str) or not body:
-                     raise ProtocolError("Email body cannot be empty.")
+                    raise ProtocolError("Email body cannot be empty.")
 
                 # Create and queue the email
                 email = models.Email(
@@ -604,102 +599,98 @@ class AkitaEmailPlugin:
                     body=body
                     # timestamp, message_id, etc., handled by model default factory
                 )
+                payload_size = protocol.validate_email_for_lora(email)
                 was_added = self.db.add_outgoing_email(email)
                 if was_added:
-                     logger.info(f"Email to {to_node_id:#0x} (ID: {email.message_id}) queued via companion command.")
-                     # Optionally send immediate confirmation back? Status update is better.
-                     response_payload = protocol.encode_companion_response(
-                         config.RESP_STATUS_UPDATE,
-                         message_id=email.message_id,
-                         status=models.STATUS_PENDING,
-                         info="Email queued for sending."
-                     )
+                    logger.info(
+                        f"Email to {to_node_id:#0x} (ID: {email.message_id}) queued via companion command "
+                        f"with payload size {payload_size} bytes."
+                    )
+                    response_payload = protocol.encode_companion_response(
+                        config.RESP_STATUS_UPDATE,
+                        message_id=email.message_id,
+                        status=models.STATUS_PENDING,
+                        info="Email queued for sending."
+                    )
                 else:
-                     # This might happen if the companion sends the same command twice quickly
-                     logger.warning(f"Attempted to queue duplicate email via companion (ID: {email.message_id})")
-                     response_payload = protocol.encode_companion_response(
-                         config.RESP_ERROR,
-                         command=command,
-                         message="Duplicate email ignored."
-                     )
+                    logger.warning(f"Attempted to queue duplicate email via companion (ID: {email.message_id})")
+                    response_payload = protocol.encode_companion_response(
+                        config.RESP_ERROR,
+                        command=command,
+                        message="Duplicate email ignored."
+                    )
 
 
             elif command == config.CMD_READ_EMAILS:
-                 limit = params.get('limit', 50)
-                 try:
-                     limit = int(limit)
-                     if limit <= 0: limit = 50
-                 except ValueError:
-                     limit = 50
+                limit = params.get('limit', 50)
+                try:
+                    limit = int(limit)
+                    if limit <= 0:
+                        limit = 50
+                except ValueError:
+                    limit = 50
 
-                 logger.debug(f"Companion requested inbox emails (limit: {limit}).")
-                 inbox_emails = self.db.get_inbox_emails(limit=limit)
-                 # Convert list of Email objects to list of dictionaries for JSON
-                 email_list_dicts = [protocol.email_to_dict(mail) for mail in inbox_emails]
-                 response_payload = protocol.encode_companion_response(
-                     config.RESP_INBOX_LIST,
-                     emails=email_list_dicts
-                 )
+                logger.debug(f"Companion requested inbox emails (limit: {limit}).")
+                inbox_emails = self.db.get_inbox_emails(limit=limit)
+                email_list_dicts = [protocol.email_to_dict(mail) for mail in inbox_emails]
+                response_payload = protocol.encode_companion_response(
+                    config.RESP_INBOX_LIST,
+                    emails=email_list_dicts
+                )
 
             elif command == config.CMD_GET_STATUS:
-                 message_id = params.get('message_id')
-                 if not message_id or not isinstance(message_id, str):
-                      raise ProtocolError("Missing or invalid 'message_id' parameter for get_status.")
+                message_id = params.get('message_id')
+                if not message_id or not isinstance(message_id, str):
+                    raise ProtocolError("Missing or invalid 'message_id' parameter for get_status.")
 
-                 logger.debug(f"Companion requested status for message ID: {message_id}")
-                 email_status = self.db.get_outbox_status(message_id)
-                 if email_status:
-                      response_payload = protocol.encode_companion_response(
-                          config.RESP_STATUS_UPDATE,
-                          message_id=message_id,
-                          status=email_status.status,
-                          recipient_node_id=email_status.to_node_id,
-                          acked_by=email_status.acked_by_node_id,
-                          retry_count=email_status.retry_count,
-                          last_attempt=email_status.last_attempt_time
-                      )
-                 else:
-                      response_payload = protocol.encode_companion_response(
-                          config.RESP_ERROR,
-                          command=command,
-                          message_id=message_id,
-                          message="Message ID not found in outbox."
-                      )
+                logger.debug(f"Companion requested status for message ID: {message_id}")
+                email_status = self.db.get_outbox_status(message_id)
+                if email_status:
+                    response_payload = protocol.encode_companion_response(
+                        config.RESP_STATUS_UPDATE,
+                        message_id=message_id,
+                        status=email_status.status,
+                        recipient_node_id=email_status.to_node_id,
+                        acked_by=email_status.acked_by_node_id,
+                        retry_count=email_status.retry_count,
+                        last_attempt=email_status.last_attempt_time
+                    )
+                else:
+                    response_payload = protocol.encode_companion_response(
+                        config.RESP_ERROR,
+                        command=command,
+                        message_id=message_id,
+                        message="Message ID not found in outbox."
+                    )
 
 
             elif command == config.CMD_SET_ALIAS:
-                 alias = params.get('alias')
-                 if alias is None: # Allow empty string to clear alias? Check Meshtastic rules.
-                     raise ProtocolError("Missing 'alias' parameter for set_alias command.")
-                 alias = str(alias).strip() # Ensure string and strip whitespace
+                alias = params.get('alias')
+                if alias is None:
+                    raise ProtocolError("Missing 'alias' parameter for set_alias command.")
+                alias = str(alias).strip()
 
-                 # Validate alias according to Meshtastic rules (e.g., length, characters)
-                 # Using a simplified check here, refer to meshtastic-python for exact rules.
-                 MAX_ALIAS_LEN = 12 # Example limit
-                 if len(alias) > MAX_ALIAS_LEN or not alias.isascii() or not alias.isprintable():
-                      # Note: Meshtastic might have more specific rules (e.g., no leading/trailing spaces)
-                      logger.warning(f"Invalid alias requested: '{alias}'. Length/characters invalid.")
-                      raise ProtocolError(f"Invalid alias. Max {MAX_ALIAS_LEN} printable ASCII chars.")
+                MAX_ALIAS_LEN = 12
+                if len(alias) > MAX_ALIAS_LEN or not alias.isascii() or not alias.isprintable():
+                    logger.warning(f"Invalid alias requested: '{alias}'. Length/characters invalid.")
+                    raise ProtocolError(f"Invalid alias. Max {MAX_ALIAS_LEN} printable ASCII chars.")
 
-                 logger.info(f"Setting Meshtastic node short name to '{alias}' via companion command.")
-                 try:
-                      # Use the Meshtastic interface to set the short name for the local node
-                      # Note: This might require node restart on some firmware versions to take full effect.
-                      self.interface.getNode(self._local_node_id).setShortName(alias)
-                      # Meshtastic doesn't provide immediate confirmation, assume success if no exception
-                      response_payload = protocol.encode_companion_response(
-                          config.RESP_STATUS_UPDATE,
-                          status='alias_set',
-                          alias=alias,
-                          info="Alias set request sent to node. May require node restart."
-                      )
-                 except Exception as e:
-                      logger.error(f"Failed to send setShortName request to node: {e}", exc_info=True)
-                      raise CommunicationError(f"Failed to set node alias via Meshtastic: {e}") from e
+                logger.info(f"Setting Meshtastic node short name to '{alias}' via companion command.")
+                try:
+                    self.interface.getNode(self._local_node_id).setShortName(alias)
+                    response_payload = protocol.encode_companion_response(
+                        config.RESP_STATUS_UPDATE,
+                        status='alias_set',
+                        alias=alias,
+                        info="Alias set request sent to node. May require node restart."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send setShortName request to node: {e}", exc_info=True)
+                    raise CommunicationError(f"Failed to set node alias via Meshtastic: {e}") from e
 
             elif command == config.CMD_PING_PLUGIN:
-                 logger.debug("Received ping from companion.")
-                 response_payload = protocol.encode_companion_response(config.RESP_PONG, timestamp=time.time())
+                logger.debug("Received ping from companion.")
+                response_payload = protocol.encode_companion_response(config.RESP_PONG, timestamp=time.time())
 
             else:
                 logger.warning(f"Received unknown command from companion: {command}")
@@ -714,15 +705,11 @@ class AkitaEmailPlugin:
                 self._send_to_companion(response_payload)
 
         except (ProtocolError, DatabaseError, CommunicationError, ValueError, TypeError) as e:
-             # Handle known errors during command processing
-             logger.error(f"Error handling companion command '{command}': {e}", exc_info=True)
-             # Send specific error back to companion
-             self._send_error_to_companion(f"Error processing command '{command}': {e}", command)
+            logger.error(f"Error handling companion command '{command}': {e}", exc_info=True)
+            self._send_error_to_companion(f"Error processing command '{command}': {e}", command)
         except Exception as e:
-             # Handle unexpected errors
-             logger.critical(f"Unexpected critical error handling companion command '{command}': {e}", exc_info=True)
-             # Send generic error back to companion
-             self._send_error_to_companion("Internal plugin error occurred.", command)
+            logger.critical(f"Unexpected critical error handling companion command '{command}': {e}", exc_info=True)
+            self._send_error_to_companion("Internal plugin error occurred.", command)
 
     def _send_error_to_companion(self, error_message: str, command: Optional[str] = None):
         """Helper method to send a formatted error response to the companion."""
